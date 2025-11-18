@@ -28,8 +28,8 @@ struct Todo {
 
 impl Render for Todo {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let input_handle = self.input.clone();
-        let todo_cards_handle = self.todo_cards.clone();
+        let view_handle = cx.entity();
+
         div()
             .v_flex()
             .size_full()
@@ -40,10 +40,10 @@ impl Render for Todo {
                     .flex_grow()
                     .overflow_y_scroll()
                     .p_4()
-                    // .child(cx.new(|_| TodoCard {
-                    //     text: SharedString::new("Learn GPUI Components"),
-                    // }))
-                    // .children(self.todo_cards.iter()),
+                    .children(self.todo_cards.clone()),
+                // .child(cx.new(|_| TodoCard {
+                //     text: SharedString::new("Learn GPUI Components"),
+                // }))
             )
             .child(
                 div()
@@ -54,12 +54,21 @@ impl Render for Todo {
                     .border_color(rgb(0xe0e0e0))
                     .child(Input::new(&self.input))
                     .child(Button::new("add").icon(IconName::Plus).on_click(
-                        move |_, _window, cx| {
-                            let text = input_handle.read(cx).value();
+                        move |_, window, cx| {
+                            view_handle.update(cx, |this, cx| {
+                                let text = this.input.read(cx).value();
+                                if !text.is_empty() {
+                                    let new_card = cx.new(|_| TodoCard {
+                                        text: SharedString::from(text),
+                                    });
 
-                            // todo_cards_handle.update(cx, |this, cx| {
-                            //     this.
-                            // })
+                                    this.todo_cards.push(new_card);
+
+                                    this.input.update(cx, |input, cx| {
+                                        input.set_value("", window, cx);
+                                    })
+                                }
+                            })
                         },
                     )),
             )
