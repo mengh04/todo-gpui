@@ -6,24 +6,48 @@ use gpui_component::{
     *,
 };
 
+// 1. 定义事件：告诉父组件“我要被删除了”
+pub enum TodoCardEvent {
+    Delete,
+}
+
 struct TodoCard {
     text: SharedString,
 }
 
+// 2. 让 TodoCard 具备发送事件的能力
+impl EventEmitter<TodoCardEvent> for TodoCard {}
+
 impl Render for TodoCard {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let view_handle = cx.entity();
+
         div()
+            .h_flex()
             .p_3()
             .mb_2()
             .border_1()
             .border_color(rgb(0xc0c0c0))
             .child(Label::new(&self.text))
+            .child(
+                Button::new("delete")
+                    .icon(IconName::Delete)
+                    .on_click(move |_, _, cx| {
+                        view_handle.update(cx, |_this, cx| {
+                            // 3. 点击按钮时，发射 Delete 事件
+                            cx.emit(TodoCardEvent::Delete);
+                        })
+                    })
+                    .ml_auto(),
+            )
     }
 }
 
 struct Todo {
     input: Entity<InputState>,
     todo_cards: Vec<Entity<TodoCard>>,
+    // 4. 新增 subscriptions：用来持有“监听器”，如果不存下来，监听会立刻失效
+    subscriptions: Vec<Subscription>,
 }
 
 impl Render for Todo {
@@ -34,16 +58,12 @@ impl Render for Todo {
             .v_flex()
             .size_full()
             .child(
-                // 上面的内容区域，自适应高度
                 div()
                     .id("todo-content")
                     .flex_grow()
                     .overflow_y_scroll()
                     .p_4()
                     .children(self.todo_cards.clone()),
-                // .child(cx.new(|_| TodoCard {
-                //     text: SharedString::new("Learn GPUI Components"),
-                // }))
             )
             .child(
                 div()
@@ -62,6 +82,20 @@ impl Render for Todo {
                                         text: SharedString::from(text),
                                     });
 
+                                    // 5. 关键逻辑：订阅新卡片的事件
+                                    // 参数：(父组件引用, 发送事件的子组件, 事件内容, cx)
+                                    let subscription =
+                                        cx.subscribe(&new_card, |this, emitter, event, _cx| {
+                                            match event {
+                                                TodoCardEvent::Delete => {
+                                                    // 在列表中移除那个“发出声音”的卡片
+                                                    this.todo_cards.retain(|card| card != &emitter);
+                                                }
+                                            }
+                                        });
+
+                                    // 保存这个监听器，并保存卡片
+                                    this.subscriptions.push(subscription);
                                     this.todo_cards.push(new_card);
 
                                     this.input.update(cx, |input, cx| {
@@ -79,7 +113,6 @@ fn main() {
     let app = Application::new().with_assets(gpui_component_assets::Assets);
 
     app.run(move |cx| {
-        // This must be called before using any GPUI Component features.
         gpui_component::init(cx);
 
         let bounds = Bounds::centered(None, size(px(350.), px(600.)), cx);
@@ -95,8 +128,8 @@ fn main() {
                     let view = cx.new(|_| Todo {
                         input: input_state,
                         todo_cards: vec![],
+                        subscriptions: vec![], // 初始化为空
                     });
-                    // This first level on the window, should be a Root.
                     cx.new(|cx| Root::new(view, window, cx))
                 },
             )?;
